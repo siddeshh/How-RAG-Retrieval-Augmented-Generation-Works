@@ -1,0 +1,115 @@
+How RAG (Retrieval-Augmented Generation) Works
+The problem
+
+AI chatbots like ChatGPT and Claude learn from a big collection of text. After that, their learning stops. So if you ask about your college’s exam rules, or your company’s refund policy, the AI has never seen them. It may say “I don’t know,” or it may give a wrong answer that sounds confident. This is called hallucination.
+
+One fix is to train the AI again on your own data, but that takes a lot of time and money, and you have to repeat it whenever your data changes.
+
+RAG is an easier fix. When someone asks a question, we first search our own documents for the right information. Then we give that information to the AI along with the question.
+
+Think of an open-book exam. The AI doesn’t have to remember the whole book. It just finds the right page and reads it before answering.
+
+The two parts of RAG
+Preparing the data (done once): get your documents ready for searching.
+Answering questions (done every time): find the useful parts, give them to the AI, and get an answer.
+Part 1: Preparing the data
+Step 1: Load and clean the documents
+
+Your documents could be PDFs, web pages, or notes. First, turn them all into plain text. Then remove the useless stuff like page numbers, menus, and repeated headers. This step feels boring, but messy text here gives bad answers later.
+
+Step 2: Cut the text into small pieces
+
+A 200-page manual is too big to send to the AI with every question. So we cut it into small pieces called chunks. A chunk is usually a few paragraphs long, about 200 to 800 words.
+
+Size matters here:
+
+Too small: the chunk loses its meaning. The sentence “You must renew it every year” makes no sense if you can’t see what “it” means.
+Too big: the chunk covers many topics, so search becomes less accurate.
+
+It also helps to let neighbouring chunks overlap a little, so an idea that sits on the edge of two chunks doesn’t get lost. Cutting at headings and paragraphs works better than cutting at random points.
+
+Step 3: Turn each chunk into numbers
+
+This is the main idea of RAG. A special model, called an embedding model, reads a piece of text and turns it into a long list of numbers. Texts with similar meaning get similar numbers.
+
+For example, “How do I reset my password?” and “I forgot my login” use very different words, but they mean almost the same thing. Their numbers will be close to each other. A normal keyword search would miss this match, but this kind of search catches it.
+
+Step 4: Save everything
+
+The numbers, the original text, and some extra details (like the file name and page number) are saved in a vector database. Some popular ones are FAISS, Chroma, Pinecone, and Qdrant. These tools are built to quickly find which saved items are closest to a new one.
+
+Part 2: Answering questions
+Step 1: Turn the question into numbers
+
+When a user asks something, we turn the question into numbers using the same embedding model. It must be the same model, because numbers from different models can’t be compared.
+
+Step 2: Find the best matching chunks
+
+The database compares the question with all the saved chunks and returns the closest ones. Usually we take the top 3 to 5.
+
+Step 3: Write the prompt
+
+We put those chunks and the question together in one prompt. It can look like this:
+
+Answer the question using only the text below.
+If the answer is not in the text, say you don't know.
+
+Text:
+{chunk_1}
+{chunk_2}
+{chunk_3}
+
+Question: {user_question}
+
+The line “say you don’t know” is small but important. Without it, the AI may mix in its own guesses with your documents.
+
+Step 4: Get the answer
+
+The AI reads the chunks and writes an answer based on them. A good system also shows where the answer came from, so the user can check it. This is a big reason people trust RAG more than a normal chatbot.
+
+A short code example
+
+This is a simple version of the whole process, without error handling:
+
+python
+# Preparing the data
+chunks = split_into_chunks(load_documents("docs/"))
+vectors = [embed(c) for c in chunks]
+store.add(vectors, chunks)
+
+# Answering a question
+def answer(question):
+    q_vec = embed(question)
+    top_chunks = store.search(q_vec, k=4)
+    prompt = build_prompt(top_chunks, question)
+    return llm.generate(prompt)
+
+Tools like LangChain and LlamaIndex do these steps for you. But writing it by hand once is the best way to understand what they do.
+
+What can go wrong
+The right chunk is not found. If the correct text doesn’t come up in the search, the AI can’t use it. Most RAG problems are search problems, not AI problems.
+Bad chunks. An answer gets split across two chunks, or a table turns into messy text.
+Too much text. If you send too many chunks, the AI can get confused and miss the important part.
+Old data. The database doesn’t update by itself. When a document changes, you have to process it again.
+Big questions. RAG finds a few pieces of text. It struggles with questions like “summarize the trends in all 300 reports.”
+Ways to make it better
+Mix two kinds of search: use keyword search together with the number-based search. Keywords work better for exact things like product codes or error messages.
+Re-check the results: get 20 chunks first, then use a second model to pick the best 4.
+Rewrite the question: let the AI turn a vague question into a clearer search.
+Filter first: narrow the search by date, author, or document type before comparing.
+Test it: make a small list of questions with known answers and check your results after every change. Otherwise you are just guessing if your change helped.
+RAG vs. fine-tuning
+
+These two solve different problems.
+
+	                    RAG                                Fine-tuning
+Best for	    Adding knowledge that changes	Changing the AI’s style or behaviour
+Updating data	Process the new documents	    Train the model again
+Shows sources	Yes	Not easily
+Starting cost	Low	Higher
+
+Most teams start with RAG. They only think about fine-tuning if the problem is how the AI behaves, not what it knows.
+
+Conclusion
+
+RAG doesn’t make an AI smarter. It gives the AI the right information at the right time. You cut documents into chunks, turn them into numbers, save them, find the closest ones for each question, and let the AI answer from them. The hard part is doing each step well, especially cutting the chunks and searching. That is where most of the work goes.
